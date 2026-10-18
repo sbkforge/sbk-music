@@ -1,0 +1,120 @@
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --text: #15171c;
+  --muted: #6b7280;
+  --line: #e3e6eb;
+  --accent: #e8590c;
+  --accent-text: #ffffff;
+  --row-hover: #f0f2f5;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111318;
+    --surface: #1a1d24;
+    --text: #eceef2;
+    --muted: #9099a8;
+    --line: #2a2f3a;
+    --accent: #ff8a3d;
+    --accent-text: #111318;
+    --row-hover: #222631;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  padding-bottom: 150px;
+}
+button, input { font: inherit; color: inherit; }
+
+.top {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; gap: 12px; align-items: center;
+  padding: 12px 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.top h1 { font-size: 18px; margin: 0; white-space: nowrap; }
+#search {
+  flex: 1; min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface);
+}
+
+button {
+  border: 0; border-radius: 8px;
+  background: var(--surface);
+  padding: 8px 12px; cursor: pointer;
+}
+button.ghost { background: transparent; border: 1px solid var(--line); }
+button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.panel {
+  margin: 12px 16px; padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line); border-radius: 12px;
+  display: grid; gap: 12px;
+}
+.panel label { display: grid; gap: 4px; }
+.panel input[type=password] {
+  padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg);
+}
+.hint { margin: 0; color: var(--muted); font-size: 13px; }
+.drop {
+  border: 2px dashed var(--line); border-radius: 12px;
+  padding: 24px; text-align: center; color: var(--muted); cursor: pointer;
+}
+.drop.over { border-color: var(--accent); color: var(--text); }
+.drop input { display: none; }
+#uploadList { margin: 0; padding: 0; list-style: none; font-size: 13px; }
+#uploadList li { padding: 4px 0; }
+
+main { max-width: 900px; margin: 0 auto; padding: 8px 16px; }
+.status { color: var(--muted); }
+.tracks { list-style: none; margin: 0; padding: 0; }
+.tracks li {
+  display: grid; grid-template-columns: 32px 1fr auto; gap: 12px; align-items: center;
+  padding: 10px 8px; border-radius: 8px; cursor: pointer;
+}
+.tracks li:hover { background: var(--row-hover); }
+.tracks li.playing { color: var(--accent); }
+.tracks .num { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.tracks .t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tracks .a { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tracks .del { background: transparent; color: var(--muted); padding: 4px 8px; }
+
+.player {
+  position: fixed; left: 0; right: 0; bottom: 0;
+  display: grid; grid-template-columns: 1fr auto 1fr; grid-template-areas: "now controls vol" "seek seek seek";
+  gap: 8px 16px; align-items: center;
+  padding: 12px 16px;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+.now { grid-area: now; min-width: 0; }
+.now .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.now .artist { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.controls { grid-area: controls; display: flex; gap: 8px; align-items: center; }
+.controls button { background: transparent; font-size: 18px; }
+.controls .big {
+  background: var(--accent); color: var(--accent-text);
+  width: 44px; height: 44px; border-radius: 50%; font-size: 16px;
+}
+.controls .small { font-size: 15px; }
+.seek { grid-area: seek; display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.seek input { flex: 1; }
+.volume { grid-area: vol; justify-self: end; width: 120px; }
+input[type=range] { accent-color: var(--accent); }
+
+@media (max-width: 600px) {
+  .player { grid-template-columns: 1fr auto; grid-template-areas: "now controls" "seek seek"; }
+  .volume { display: none; }
+  .controls .small { display: none; }
+  .top h1 { display: none; }
+}

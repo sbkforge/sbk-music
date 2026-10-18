@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SBK Music</title>
+  <meta name="description" content="An open source music player running on Cloudflare.">
+  <meta name="theme-color" content="#111318">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>SBK Music</h1>
+    <input id="search" type="search" placeholder="Search songs, artists, albums" autocomplete="off">
+    <button id="uploadToggle" class="ghost" title="Upload songs">Upload</button>
+  </header>
+
+  <section id="uploadPanel" class="panel" hidden>
+    <p class="hint">Uploads need the token you set with <code>wrangler secret put UPLOAD_TOKEN</code>. It is saved only in this browser.</p>
+    <label>Upload token <input id="token" type="password" autocomplete="off"></label>
+    <label class="drop" id="drop">
+      <input id="files" type="file" accept="audio/*" multiple>
+      <span>Drop audio files here or click to pick. Name them "Artist - Title.mp3".</span>
+    </label>
+    <ul id="uploadList"></ul>
+  </section>
+
+  <main>
+    <p id="status" class="status">Loading songs…</p>
+    <ol id="tracks" class="tracks"></ol>
+  </main>
+
+  <footer class="player">
+    <div class="now">
+      <div id="nowTitle" class="title">Nothing playing</div>
+      <div id="nowArtist" class="artist"></div>
+    </div>
+    <div class="controls">
+      <button id="shuffle" class="ghost small" title="Shuffle (S)" aria-pressed="false">⤮</button>
+      <button id="prev" title="Previous (←)">⏮</button>
+      <button id="play" class="big" title="Play / pause (Space)">▶</button>
+      <button id="next" title="Next (→)">⏭</button>
+      <button id="repeat" class="ghost small" title="Repeat (R)" aria-pressed="false">↻</button>
+    </div>
+    <div class="seek">
+      <span id="cur">0:00</span>
+      <input id="seek" type="range" min="0" max="1000" value="0" aria-label="Seek">
+      <span id="dur">0:00</span>
+    </div>
+    <input id="volume" type="range" min="0" max="1" step="0.01" value="1" aria-label="Volume" class="volume">
+  </footer>
+
+  <audio id="audio" preload="metadata"></audio>
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

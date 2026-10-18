@@ -1,0 +1,14 @@
+{
+  "name": "sbk-music",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open source music player on Cloudflare Workers + R2",
+  "license": "MIT",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
