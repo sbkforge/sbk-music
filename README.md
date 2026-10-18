@@ -43,7 +43,14 @@ npm run deploy
 
 Open the `*.workers.dev` URL it prints, click **Upload**, paste the token, and drop in some songs.
 
-To deploy on every push instead, connect your fork in the Cloudflare dashboard (Workers & Pages → Create → Import a repository) with the deploy command `npx wrangler deploy`.
+### Auto-deploy on push
+
+`.github/workflows/deploy.yml` deploys on every push to `main`. Add two repo secrets (Settings → Secrets and variables → Actions):
+
+- `CLOUDFLARE_API_TOKEN`: create one at dash.cloudflare.com/profile/api-tokens with the **Edit Cloudflare Workers** template
+- `CLOUDFLARE_ACCOUNT_ID`: shown by `npx wrangler whoami`
+
+Without them, the workflow skips the deploy step.
 
 ### Local development
 
