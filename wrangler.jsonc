@@ -8,8 +8,9 @@
     "binding": "ASSETS",
     "run_worker_first": ["/api/*"]
   },
-  "r2_buckets": [
-    { "binding": "MUSIC", "bucket_name": "sbk-music" }
+  // Forks: replace this id with your own from `wrangler kv namespace create MUSIC`.
+  "kv_namespaces": [
+    { "binding": "MUSIC", "id": "10158fd06f57485bb82c9f8f9a0138b9" }
   ],
   "observability": { "enabled": true }
 }

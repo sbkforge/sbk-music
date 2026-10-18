@@ -275,6 +275,10 @@ async function uploadFiles(files) {
     const li = document.createElement("li");
     li.textContent = `Uploading ${file.name}…`;
     $("uploadList").prepend(li);
+    if (file.size > 25 * 1024 * 1024) {
+      li.textContent = `✕ ${file.name}: over 25 MB`;
+      continue;
+    }
 
     const base = file.name.replace(/\.[^.]+$/, "");
     const [artist, ...rest] = base.split(" - ");

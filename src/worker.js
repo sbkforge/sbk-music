@@ -1,7 +1,13 @@
-// sbk-music Worker: lists tracks, streams audio from R2, and handles
+// sbk-music Worker: lists tracks, streams audio from Workers KV, and handles
 // token-protected uploads and deletes. Static files come from ./public.
+//
+// Each song is one KV entry under "track:<file name>". Its metadata holds
+// title, artist, album, size, content type and upload time, so listing
+// never has to read the audio itself.
 
 const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|oga|opus|flac|wav|webm)$/i;
+const PREFIX = "track:";
+const MAX_BYTES = 25 * 1024 * 1024; // KV value limit
 
 export default {
   async fetch(request, env) {
@@ -37,21 +43,21 @@ async function listTracks(env) {
   const tracks = [];
   let cursor;
   do {
-    const page = await env.MUSIC.list({ cursor, include: ["customMetadata"] });
-    for (const obj of page.objects) {
-      if (!AUDIO_EXT.test(obj.key)) continue;
-      const meta = obj.customMetadata || {};
-      const guess = guessFromName(obj.key);
+    const page = await env.MUSIC.list({ prefix: PREFIX, cursor });
+    for (const k of page.keys) {
+      const key = k.name.slice(PREFIX.length);
+      const meta = k.metadata || {};
+      const guess = guessFromName(key);
       tracks.push({
-        key: obj.key,
+        key,
         title: meta.title || guess.title,
         artist: meta.artist || guess.artist,
         album: meta.album || "",
-        size: obj.size,
-        uploaded: obj.uploaded,
+        size: meta.size || 0,
+        uploaded: meta.uploaded || null,
       });
     }
-    cursor = page.truncated ? page.cursor : undefined;
+    cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
 
   tracks.sort((a, b) =>
@@ -61,37 +67,58 @@ async function listTracks(env) {
 }
 
 async function streamTrack(request, env, key) {
-  // Passing the request headers lets R2 handle Range and If-None-Match.
-  const obj = await env.MUSIC.get(key, {
-    range: request.headers,
-    onlyIf: request.headers,
+  const { value, metadata } = await env.MUSIC.getWithMetadata(PREFIX + key, {
+    type: "arrayBuffer",
+    cacheTtl: 3600,
   });
-  if (obj === null) return json({ error: "Not found" }, 404);
+  if (value === null) return json({ error: "Not found" }, 404);
 
-  const headers = new Headers();
-  obj.writeHttpMetadata(headers);
-  headers.set("etag", obj.httpEtag);
-  headers.set("accept-ranges", "bytes");
-  headers.set("cache-control", "public, max-age=86400");
+  const size = value.byteLength;
+  const etag = `"${(metadata && metadata.uploaded) || size}"`;
+  const headers = new Headers({
+    "content-type": (metadata && metadata.type) || "audio/mpeg",
+    "accept-ranges": "bytes",
+    "cache-control": "public, max-age=86400",
+    etag,
+  });
 
-  // onlyIf matched an existing copy: body is absent.
-  if (!("body" in obj)) return new Response(null, { status: 304, headers });
-
-  let status = 200;
-  if (request.headers.has("range") && obj.range) {
-    const { offset = 0, length = obj.size - offset } = obj.range;
-    headers.set(
-      "content-range",
-      `bytes ${offset}-${offset + length - 1}/${obj.size}`
-    );
-    headers.set("content-length", String(length));
-    status = 206;
-  } else {
-    headers.set("content-length", String(obj.size));
+  if (request.headers.get("if-none-match") === etag) {
+    return new Response(null, { status: 304, headers });
   }
 
-  const body = request.method === "HEAD" ? null : obj.body;
-  return new Response(body, { status, headers });
+  // Browsers seek with Range requests; serve just the asked-for bytes.
+  const range = parseRange(request.headers.get("range"), size);
+  if (range === "invalid") {
+    headers.set("content-range", `bytes */${size}`);
+    return new Response(null, { status: 416, headers });
+  }
+
+  let body = value;
+  let status = 200;
+  if (range) {
+    body = value.slice(range.start, range.end + 1);
+    headers.set("content-range", `bytes ${range.start}-${range.end}/${size}`);
+    status = 206;
+  }
+  headers.set("content-length", String(body.byteLength));
+  return new Response(request.method === "HEAD" ? null : body, { status, headers });
+}
+
+// Parses "bytes=a-b", "bytes=a-" and "bytes=-n". Returns null for no range.
+function parseRange(header, size) {
+  if (!header) return null;
+  const m = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!m || (m[1] === "" && m[2] === "")) return "invalid";
+  let start, end;
+  if (m[1] === "") {
+    start = Math.max(0, size - Number(m[2]));
+    end = size - 1;
+  } else {
+    start = Number(m[1]);
+    end = m[2] === "" ? size - 1 : Math.min(Number(m[2]), size - 1);
+  }
+  if (start >= size || start > end) return "invalid";
+  return { start, end };
 }
 
 async function uploadTrack(request, env, key) {
@@ -100,23 +127,31 @@ async function uploadTrack(request, env, key) {
     return json({ error: "Use an audio file name like song.mp3" }, 400);
   }
 
-  const h = request.headers;
-  const customMetadata = {};
-  for (const field of ["title", "artist", "album"]) {
-    const value = h.get(`x-${field}`);
-    if (value) customMetadata[field] = decodeURIComponent(value).slice(0, 200);
+  const data = await request.arrayBuffer();
+  if (data.byteLength === 0) return json({ error: "Empty file" }, 400);
+  if (data.byteLength > MAX_BYTES) {
+    return json({ error: "File is over 25 MB" }, 413);
   }
 
-  await env.MUSIC.put(key, request.body, {
-    httpMetadata: { contentType: h.get("content-type") || "audio/mpeg" },
-    customMetadata,
-  });
+  const h = request.headers;
+  const metadata = {
+    size: data.byteLength,
+    type: h.get("content-type") || "audio/mpeg",
+    uploaded: new Date().toISOString(),
+  };
+  // KV metadata is capped at 1 KB, so keep these short.
+  for (const field of ["title", "artist", "album"]) {
+    const value = h.get(`x-${field}`);
+    if (value) metadata[field] = decodeURIComponent(value).slice(0, 150);
+  }
+
+  await env.MUSIC.put(PREFIX + key, data, { metadata });
   return json({ ok: true, key }, 201);
 }
 
 async function deleteTrack(request, env, key) {
   if (!authorized(request, env)) return json({ error: "Unauthorized" }, 401);
-  await env.MUSIC.delete(key);
+  await env.MUSIC.delete(PREFIX + key);
   return json({ ok: true });
 }
 

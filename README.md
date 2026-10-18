@@ -1,10 +1,10 @@
 # SBK Music
 
-An open source music player that runs on Cloudflare. Songs live in an R2 bucket, a Worker streams them, and the player is a plain HTML/JS page. No build step, no framework.
+An open source music player that runs on Cloudflare's free plan. Songs live in Workers KV, a Worker streams them, and the player is a plain HTML/JS page. No build step, no framework, no credit card.
 
 ## Features
 
-- Stream your own songs from Cloudflare R2 (seeking works, via HTTP range requests)
+- Stream your own songs from Workers KV (seeking works, via HTTP range requests)
 - Search across title, artist and album
 - Shuffle, repeat, next/previous, volume, seek bar
 - Keyboard: Space play/pause, ← → prev/next, S shuffle, R repeat, / search
@@ -15,7 +15,7 @@ An open source music player that runs on Cloudflare. Songs live in an R2 bucket,
 ## How it works
 
 ```
-browser ──> Worker (src/worker.js) ──> R2 bucket "sbk-music"
+browser ──> Worker (src/worker.js) ──> KV namespace "MUSIC"
               │
               └─> static files (public/)
 ```
@@ -31,36 +31,36 @@ Title and artist come from upload metadata, or from file names like `Artist - Ti
 
 ## Deploy your own
 
-You need a Cloudflare account (the free plan works).
-
-1. **Create the bucket.** Cloudflare dashboard → R2 → Create bucket → name it `sbk-music`.
-2. **Connect the repo.** Workers & Pages → Create → Import a repository → pick your fork of this repo. Leave the build command empty; the deploy command is `npx wrangler deploy`.
-3. **Set the upload token.** In the Worker → Settings → Variables and secrets, add a secret `UPLOAD_TOKEN` with a long random value.
-4. Open your `*.workers.dev` URL, click **Upload**, paste the token, drop in some songs.
-
-Every push to `main` deploys again.
-
-### Or from your computer
+You need a free Cloudflare account and Node.js.
 
 ```sh
 npm install
 npx wrangler login
-npx wrangler r2 bucket create sbk-music
-npx wrangler secret put UPLOAD_TOKEN
+npx wrangler kv namespace create MUSIC   # put the printed id in wrangler.jsonc
+npx wrangler secret put UPLOAD_TOKEN     # any long random value
 npm run deploy
 ```
+
+Open the `*.workers.dev` URL it prints, click **Upload**, paste the token, and drop in some songs.
+
+To deploy on every push instead, connect your fork in the Cloudflare dashboard (Workers & Pages → Create → Import a repository) with the deploy command `npx wrangler deploy`.
 
 ### Local development
 
 ```sh
 cp .dev.vars.example .dev.vars   # set UPLOAD_TOKEN
-npm run dev                      # uses a local R2 bucket
+npm run dev                      # uses a local KV store
 ```
+
+## Free plan limits
+
+- 25 MB per song (KV value limit)
+- 1 GB of songs in total
+- 1,000 uploads or deletes per day, 100,000 plays/list loads per day
 
 ## Notes
 
 - Anyone with the URL can listen. Only people with the token can upload or delete.
-- Uploads go through the Worker, so each file is limited to 100 MB on the free plan.
 - Only upload music you have the right to share.
 
 ## License
