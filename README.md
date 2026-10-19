@@ -14,7 +14,8 @@ You can also upload your own songs, which are stored in Workers KV.
 
 ## Features
 
-- Browse and search free albums, live shows and singles, with cover art
+- One search across every source at once (All tab), plus a tab per source
+- Browse free albums, live shows and singles, with cover art
 - Album pages with license and source links for attribution
 - Stream your own uploads from Workers KV (seeking works, via HTTP range requests)
 - Shuffle, repeat, next/previous, volume, seek bar

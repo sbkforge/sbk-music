@@ -12,12 +12,13 @@
 <body>
   <header class="top">
     <h1>SBK Music</h1>
-    <input id="search" type="search" placeholder="Search free music" autocomplete="off">
+    <input id="search" type="search" placeholder="Search all music" autocomplete="off">
     <button id="uploadToggle" class="ghost" title="Upload songs">Upload</button>
   </header>
 
   <nav class="chips" aria-label="Source">
-    <button data-source="netlabels" aria-pressed="true">Albums</button>
+    <button data-source="all" aria-pressed="true">All</button>
+    <button data-source="netlabels" aria-pressed="false">Albums</button>
     <button data-source="live" aria-pressed="false">Live shows</button>
     <button data-source="singles" aria-pressed="false">Singles</button>
     <button data-source="popular" aria-pressed="false">Popular</button>
@@ -57,6 +58,7 @@
     <p id="note" class="note" hidden></p>
     <div id="artists" class="artists" hidden></div>
     <p id="status" class="status">Loading…</p>
+    <div id="sections" class="sections" hidden></div>
     <div id="albums" class="albums"></div>
     <ol id="tracks" class="tracks"></ol>
     <button id="more" class="ghost more" hidden>Load more</button>

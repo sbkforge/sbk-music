@@ -161,6 +161,12 @@ button.primary { background: var(--accent); color: var(--accent-text); justify-s
 .artists { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; }
 .artists button { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 5px 12px; font-size: 13px; }
 .artists button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.sections { display: grid; gap: 28px; }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.section-head h3 { margin: 0; font-size: 17px; }
+.section-head .sub { color: var(--muted); font-size: 12px; font-weight: 400; margin-left: 8px; }
+.section-head button { background: transparent; color: var(--accent); padding: 4px 0; font-size: 13px; }
+.sections .albums { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
 .note { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
 .tracks .thumb { width: 40px; height: 40px; border-radius: 6px; object-fit: cover; background: var(--surface); }
 .tracks .badge {

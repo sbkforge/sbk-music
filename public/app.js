@@ -2,7 +2,7 @@ const $ = (id) => document.getElementById(id);
 const audio = $("audio");
 
 const state = {
-  source: "netlabels", // netlabels | live | singles | mine
+  source: "all", // all | netlabels | live | singles | popular | soundcloud | mine
   query: "",
   page: 1,
   albums: [],     // album cards on screen
@@ -13,6 +13,7 @@ const state = {
   shuffle: false,
   repeat: false,
   mine: [],       // uploaded tracks
+  sections: [],   // results per source on the All tab
 };
 
 const store = {
@@ -54,7 +55,10 @@ async function load(append = false) {
 
   const q = encodeURIComponent(state.query);
   try {
-    if (state.source === "mine") {
+    if (state.source === "all") {
+      setStatus("");
+      loadAll(id);
+    } else if (state.source === "mine") {
       state.list = filterMine();
       setStatus(state.list.length ? "" : "No uploads match.");
     } else if (state.source === "soundcloud") {
@@ -109,9 +113,108 @@ function closeAlbum() {
   state.album = null;
   state.list = [];
   ++loadId;
-  setStatus(state.albums.length ? "" : "Nothing found.");
-  $("more").hidden = state.albums.length === 0;
+  if (state.source === "all") setStatus("");
+  else {
+    setStatus(state.albums.length ? "" : "Nothing found.");
+    $("more").hidden = state.albums.length === 0;
+  }
   render();
+}
+
+// ---------- All tab: one search across every source ----------
+
+function loadAll(id) {
+  const q = encodeURIComponent(state.query);
+  const searching = !!state.query;
+  const defs = [
+    { title: searching ? "Songs" : "Top songs", sub: "30-second previews", source: "popular",
+      kind: "tracks", limit: 10, get: () => popular(state.query) },
+    { title: "Your SoundCloud", sub: "full songs", source: "soundcloud",
+      kind: "tracks", limit: 10, get: async () => filterSaved(loadSaved()) },
+    { title: "Free full songs", sub: "ccMixter", source: "singles", kind: "tracks", limit: 8,
+      get: async () => (await getJSON(`/api/web/tracks?q=${q}`)).tracks },
+    { title: "Free albums", sub: "Internet Archive", source: "netlabels", kind: "albums", limit: 10,
+      get: async () => (await getJSON(`/api/web/search?source=netlabels&q=${q}`)).albums },
+    { title: "Live shows", sub: "Internet Archive", source: "live", kind: "albums", limit: 10,
+      get: async () => (await getJSON(`/api/web/search?source=live&q=${q}`)).albums },
+    { title: "Your uploads", source: "mine", kind: "tracks", limit: 10,
+      get: async () => filterMine() },
+  ];
+  state.sections = defs.map((d) => ({ ...d, items: [], loading: true, error: "" }));
+  renderSections();
+
+  let pending = state.sections.length;
+  for (const sec of state.sections) {
+    sec.get()
+      .then((items) => { sec.items = items || []; })
+      .catch((err) => { sec.error = err.message; })
+      .finally(() => {
+        if (id !== loadId) return;
+        sec.loading = false;
+        renderSections();
+        if (--pending === 0 && state.sections.every((s) => !s.items.length)) {
+          setStatus(state.query ? `Nothing found for “${state.query}”.` : "Nothing to show.");
+        }
+      });
+  }
+}
+
+function renderSections() {
+  const box = $("sections");
+  box.hidden = state.source !== "all" || !!state.album;
+  if (box.hidden) return;
+  box.replaceChildren();
+
+  for (const sec of state.sections) {
+    // Hide sections with nothing in them once they've loaded.
+    if (!sec.loading && !sec.items.length) continue;
+
+    const wrap = document.createElement("section");
+    const head = document.createElement("div");
+    head.className = "section-head";
+    const h = document.createElement("h3");
+    h.textContent = sec.title;
+    if (sec.sub) {
+      const sub = document.createElement("span");
+      sub.className = "sub";
+      sub.textContent = sec.sub;
+      h.append(sub);
+    }
+    head.append(h);
+    if (sec.items.length > sec.limit) {
+      const all = document.createElement("button");
+      all.textContent = "See all →";
+      all.addEventListener("click", () => switchSource(sec.source));
+      head.append(all);
+    }
+    wrap.append(head);
+
+    if (sec.loading) {
+      const p = document.createElement("p");
+      p.className = "status";
+      p.textContent = "Loading…";
+      wrap.append(p);
+    } else if (sec.kind === "albums") {
+      const grid = document.createElement("div");
+      grid.className = "albums";
+      grid.append(...sec.items.slice(0, sec.limit).map(albumCard));
+      wrap.append(grid);
+    } else {
+      const ol = document.createElement("ol");
+      ol.className = "tracks";
+      sec.el = ol;
+      fillTracks(ol, sec.items.slice(0, sec.limit));
+      wrap.append(ol);
+    }
+    box.append(wrap);
+  }
+}
+
+function switchSource(source) {
+  state.source = source;
+  store.set("source", source);
+  load();
+  window.scrollTo(0, 0);
 }
 
 function filterMine() {
@@ -135,7 +238,7 @@ const ARTISTS = [
 
 function renderArtists() {
   const box = $("artists");
-  box.hidden = state.source !== "popular";
+  box.hidden = (state.source !== "popular" && state.source !== "all") || !!state.album;
   if (box.hidden) return;
   if (!box.childElementCount) {
     for (const name of ARTISTS) {
@@ -282,11 +385,13 @@ function render() {
   $("note").hidden = !note || !!state.album;
   $("note").textContent = note || "";
   $("search").placeholder = {
+    all: "Search all music",
     popular: "Search any artist or song",
     soundcloud: "Filter saved links",
     mine: "Filter uploads",
   }[state.source] || "Search free music";
 
+  renderSections();
   renderTracks();
   document.querySelectorAll(".chips button").forEach((b) =>
     b.setAttribute("aria-pressed", b.dataset.source === state.source)
@@ -312,14 +417,23 @@ function albumCard(a) {
 }
 
 function renderTracks() {
-  const list = $("tracks");
+  fillTracks($("tracks"), state.list);
+  // Keep the "now playing" highlight right in the All tab's sections too.
+  if (state.source === "all" && !state.album) {
+    for (const sec of state.sections) {
+      if (sec.el && sec.el.isConnected) fillTracks(sec.el, sec.items.slice(0, sec.limit));
+    }
+  }
+}
+
+function fillTracks(list, tracks) {
   list.replaceChildren();
   const current = currentTrack();
   const canDelete =
     (state.source === "mine" && !!store.get("uploadToken", "")) ||
     state.source === "soundcloud";
 
-  state.list.forEach((t, i) => {
+  tracks.forEach((t, i) => {
     const li = document.createElement("li");
     if (current && current.key === t.key) li.classList.add("playing");
 
@@ -380,7 +494,7 @@ function renderTracks() {
       li.append(del);
     }
 
-    li.addEventListener("click", () => playList(i));
+    li.addEventListener("click", () => playList(i, tracks));
     list.append(li);
   });
 }
@@ -395,8 +509,8 @@ function trackUrl(t) {
   return t.url || "/api/stream/" + t.key.split("/").map(encodeURIComponent).join("/");
 }
 
-function playList(start) {
-  const tracks = state.list.slice();
+function playList(start, list = state.list) {
+  const tracks = list.slice();
   if (state.shuffle) {
     const first = tracks.splice(start, 1)[0];
     shuffleInPlace(tracks);
@@ -631,11 +745,7 @@ $("playAll").addEventListener("click", () => state.list.length && playList(0));
 $("more").addEventListener("click", () => { state.page++; load(true); });
 
 document.querySelectorAll(".chips button").forEach((b) =>
-  b.addEventListener("click", () => {
-    state.source = b.dataset.source;
-    store.set("source", state.source);
-    load();
-  })
+  b.addEventListener("click", () => switchSource(b.dataset.source))
 );
 
 let searchTimer;
@@ -677,7 +787,7 @@ async function loadMine() {
   document.querySelector('[data-source="mine"]').hidden = state.mine.length === 0;
   if (state.source === "mine") {
     if (state.mine.length) load();
-    else { state.source = "netlabels"; load(); }
+    else { state.source = "all"; load(); }
   }
 }
 
@@ -763,7 +873,7 @@ $("shuffle").setAttribute("aria-pressed", state.shuffle);
 $("repeat").setAttribute("aria-pressed", state.repeat);
 audio.volume = Number(store.get("volume", 1));
 $("volume").value = audio.volume;
-const saved = store.get("source", "netlabels");
-state.source = ["netlabels", "live", "singles", "popular", "soundcloud", "mine"].includes(saved) ? saved : "netlabels";
+const saved = store.get("source", "all");
+state.source = ["all", "netlabels", "live", "singles", "popular", "soundcloud", "mine"].includes(saved) ? saved : "all";
 load();
 loadMine();
