@@ -22,6 +22,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; }
 body {
   background: var(--bg);
@@ -79,7 +80,7 @@ main { max-width: 900px; margin: 0 auto; padding: 8px 16px; }
 .status { color: var(--muted); }
 .tracks { list-style: none; margin: 0; padding: 0; }
 .tracks li {
-  display: grid; grid-template-columns: 32px 1fr auto; gap: 12px; align-items: center;
+  display: grid; grid-template-columns: 32px minmax(0, 1fr) auto auto; gap: 12px; align-items: center;
   padding: 10px 8px; border-radius: 8px; cursor: pointer;
 }
 .tracks li:hover { background: var(--row-hover); }
@@ -87,6 +88,7 @@ main { max-width: 900px; margin: 0 auto; padding: 8px 16px; }
 .tracks .num { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
 .tracks .t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tracks .a { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tracks .len { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 .tracks .del { background: transparent; color: var(--muted); padding: 4px 8px; }
 
 .player {
@@ -112,7 +114,48 @@ main { max-width: 900px; margin: 0 auto; padding: 8px 16px; }
 .volume { grid-area: vol; justify-self: end; width: 120px; }
 input[type=range] { accent-color: var(--accent); }
 
+.chips {
+  display: flex; gap: 8px; overflow-x: auto;
+  padding: 10px 16px; max-width: 900px; margin: 0 auto;
+}
+.chips button { border: 1px solid var(--line); background: transparent; border-radius: 999px; padding: 6px 14px; white-space: nowrap; }
+.chips button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+
+.albums {
+  display: grid; gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+.album {
+  display: grid; gap: 4px; text-align: left;
+  background: transparent; padding: 0; border-radius: 10px; min-width: 0;
+}
+.album img {
+  width: 100%; aspect-ratio: 1; object-fit: cover;
+  border-radius: 10px; background: var(--surface);
+}
+.album .t { font-weight: 600; font-size: 14px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.album .a { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.album:hover img { outline: 2px solid var(--accent); }
+
+.album-head {
+  display: grid; grid-template-columns: 160px 1fr; gap: 16px; align-items: end;
+  margin-bottom: 16px;
+}
+.album-head #back { grid-column: 1 / -1; justify-self: start; }
+.album-head img { width: 160px; height: 160px; object-fit: cover; border-radius: 12px; background: var(--surface); }
+.album-info { display: grid; gap: 6px; min-width: 0; }
+.album-info h2 { margin: 0; font-size: 22px; line-height: 1.2; }
+.album-meta { display: flex; gap: 12px; font-size: 13px; }
+.album-meta a, .credit a { color: var(--accent); }
+.muted { color: var(--muted); }
+button.primary { background: var(--accent); color: var(--accent-text); justify-self: start; font-weight: 600; }
+.more { display: block; margin: 16px auto; }
+.credit { color: var(--muted); font-size: 12px; text-align: center; margin: 24px 0 8px; }
+
 @media (max-width: 600px) {
+  .album-head { grid-template-columns: 110px 1fr; }
+  .album-head img { width: 110px; height: 110px; }
+  .albums { grid-template-columns: repeat(2, 1fr); }
   .player { grid-template-columns: 1fr auto; grid-template-areas: "now controls" "seek seek"; }
   .volume { display: none; }
   .controls .small { display: none; }

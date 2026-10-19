@@ -1,11 +1,20 @@
 # SBK Music
 
-An open source music player that runs on Cloudflare's free plan. Songs live in Workers KV, a Worker streams them, and the player is a plain HTML/JS page. No build step, no framework, no credit card.
+An open source music player for free, legal music. It runs on Cloudflare's free plan with no build step, no framework and no credit card.
+
+Out of the box it streams from:
+
+- **Internet Archive netlabels**: 60,000+ albums released under Creative Commons licenses
+- **Internet Archive live music (etree)**: concert recordings that the artists allow to be shared
+- **ccMixter**: Creative Commons singles and remixes
+
+You can also upload your own songs, which are stored in Workers KV.
 
 ## Features
 
-- Stream your own songs from Workers KV (seeking works, via HTTP range requests)
-- Search across title, artist and album
+- Browse and search free albums, live shows and singles, with cover art
+- Album pages with license and source links for attribution
+- Stream your own uploads from Workers KV (seeking works, via HTTP range requests)
 - Shuffle, repeat, next/previous, volume, seek bar
 - Keyboard: Space play/pause, ← → prev/next, S shuffle, R repeat, / search
 - Lock screen and headphone controls (Media Session API)
@@ -22,6 +31,10 @@ browser ──> Worker (src/worker.js) ──> KV namespace "MUSIC"
 
 | Route | What it does |
 |---|---|
+| `GET /api/web/search?source=netlabels\|live&q=&page=` | Search Internet Archive albums |
+| `GET /api/web/album/<id>` | Tracks of one album (only netlabel CC albums and etree shows) |
+| `GET /api/web/tracks?q=&page=` | Search ccMixter singles |
+| `GET /api/web/ccm/<path>` | Stream a ccMixter file (its server blocks direct links) |
 | `GET /api/tracks` | List songs |
 | `GET /api/stream/<key>` | Stream a song (supports Range) |
 | `PUT /api/tracks/<key>` | Upload a song (needs token) |
@@ -67,6 +80,7 @@ npm run dev                      # uses a local KV store
 
 ## Notes
 
+- Only sources that are free and legal to stream are included. Please keep it that way in pull requests.
 - Anyone with the URL can listen. Only people with the token can upload or delete.
 - Only upload music you have the right to share.
 

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>SBK Music</title>
-  <meta name="description" content="An open source music player running on Cloudflare.">
+  <meta name="description" content="An open source music player for free, legal music, running on Cloudflare.">
   <meta name="theme-color" content="#111318">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>">
   <link rel="stylesheet" href="/style.css">
@@ -12,9 +12,16 @@
 <body>
   <header class="top">
     <h1>SBK Music</h1>
-    <input id="search" type="search" placeholder="Search songs, artists, albums" autocomplete="off">
+    <input id="search" type="search" placeholder="Search free music" autocomplete="off">
     <button id="uploadToggle" class="ghost" title="Upload songs">Upload</button>
   </header>
+
+  <nav class="chips" aria-label="Source">
+    <button data-source="netlabels" aria-pressed="true">Albums</button>
+    <button data-source="live" aria-pressed="false">Live shows</button>
+    <button data-source="singles" aria-pressed="false">Singles</button>
+    <button data-source="mine" aria-pressed="false" hidden>My uploads</button>
+  </nav>
 
   <section id="uploadPanel" class="panel" hidden>
     <p class="hint">Uploads need the token you set with <code>wrangler secret put UPLOAD_TOKEN</code>. It is saved only in this browser.</p>
@@ -27,8 +34,25 @@
   </section>
 
   <main>
-    <p id="status" class="status">Loading songs…</p>
+    <div id="albumHead" class="album-head" hidden>
+      <button id="back" class="ghost">← Back</button>
+      <img id="albumCover" alt="">
+      <div class="album-info">
+        <h2 id="albumTitle"></h2>
+        <div id="albumArtist" class="muted"></div>
+        <div class="album-meta">
+          <a id="albumLicense" target="_blank" rel="noopener">License</a>
+          <a id="albumPage" target="_blank" rel="noopener">Source</a>
+        </div>
+        <button id="playAll" class="primary">▶ Play all</button>
+      </div>
+    </div>
+
+    <p id="status" class="status">Loading…</p>
+    <div id="albums" class="albums"></div>
     <ol id="tracks" class="tracks"></ol>
+    <button id="more" class="ghost more" hidden>Load more</button>
+    <p class="credit">Music from the <a href="https://archive.org/details/netlabels" target="_blank" rel="noopener">Internet Archive</a> and <a href="https://ccmixter.org" target="_blank" rel="noopener">ccMixter</a>, shared by the artists under Creative Commons or live-recording licenses.</p>
   </main>
 
   <footer class="player">

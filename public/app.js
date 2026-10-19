@@ -2,12 +2,17 @@ const $ = (id) => document.getElementById(id);
 const audio = $("audio");
 
 const state = {
-  tracks: [],     // everything from the server
-  view: [],       // tracks after search filter
-  queue: [],      // play order (indexes into tracks)
-  pos: -1,        // position in queue
+  source: "netlabels", // netlabels | live | singles | mine
+  query: "",
+  page: 1,
+  albums: [],     // album cards on screen
+  album: null,    // open album, if any
+  list: [],       // tracks on screen
+  queue: [],      // tracks queued for playback (snapshot of a list)
+  pos: -1,
   shuffle: false,
   repeat: false,
+  mine: [],       // uploaded tracks
 };
 
 const store = {
@@ -19,50 +24,146 @@ const store = {
   },
 };
 
-// ---------- loading ----------
+async function getJSON(url) {
+  const res = await fetch(url);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Server said ${res.status}`);
+  return data;
+}
 
-async function loadTracks() {
-  try {
-    const res = await fetch("/api/tracks");
-    if (!res.ok) throw new Error(`Server said ${res.status}`);
-    const data = await res.json();
-    const playingKey = currentTrack()?.key;
-    state.tracks = data.tracks;
-    state.queue = [];
-    state.pos = -1;
-    applySearch();
-    // Keep next/prev working after the list reloads (e.g. after an upload).
-    const i = state.tracks.findIndex((t) => t.key === playingKey);
-    if (i >= 0) buildQueue(i);
-    $("status").textContent = state.tracks.length
-      ? `${state.tracks.length} songs`
-      : "No songs yet. Use Upload to add some.";
-  } catch (err) {
-    $("status").textContent = `Could not load songs: ${err.message}`;
+function setStatus(text) {
+  $("status").textContent = text;
+  $("status").hidden = !text;
+}
+
+// ---------- browsing ----------
+
+let loadId = 0;
+
+async function load(append = false) {
+  const id = ++loadId;
+  if (!append) {
+    state.page = 1;
+    state.albums = [];
+    state.list = [];
+    state.album = null;
+    render();
   }
+  setStatus("Loading…");
+  $("more").hidden = true;
+
+  const q = encodeURIComponent(state.query);
+  try {
+    if (state.source === "mine") {
+      state.list = filterMine();
+      setStatus(state.list.length ? "" : "No uploads match.");
+    } else if (state.source === "singles") {
+      const data = await getJSON(`/api/web/tracks?q=${q}&page=${state.page}`);
+      if (id !== loadId) return;
+      state.list = state.list.concat(data.tracks);
+      $("more").hidden = !data.more;
+      setStatus(state.list.length ? "" : "Nothing found.");
+    } else {
+      const data = await getJSON(`/api/web/search?source=${state.source}&q=${q}&page=${state.page}`);
+      if (id !== loadId) return;
+      state.albums = state.albums.concat(data.albums);
+      $("more").hidden = state.albums.length >= data.total;
+      setStatus(state.albums.length ? "" : "Nothing found.");
+    }
+  } catch (err) {
+    if (id === loadId) setStatus(`Could not load: ${err.message}`);
+  }
+  if (id === loadId) render();
 }
 
-function streamUrl(key) {
-  return "/api/stream/" + key.split("/").map(encodeURIComponent).join("/");
+async function openAlbum(a) {
+  const id = ++loadId;
+  state.album = { ...a, tracks: [] };
+  state.list = [];
+  render();
+  setStatus("Loading tracks…");
+  try {
+    const data = await getJSON(`/api/web/album/${encodeURIComponent(a.id)}`);
+    if (id !== loadId) return;
+    state.album = data;
+    state.list = data.tracks;
+    setStatus(data.tracks.length ? "" : "This album has no playable tracks.");
+  } catch (err) {
+    if (id === loadId) setStatus(`Could not load album: ${err.message}`);
+  }
+  if (id === loadId) render();
+  window.scrollTo(0, 0);
 }
 
-// ---------- list ----------
+function closeAlbum() {
+  state.album = null;
+  state.list = [];
+  ++loadId;
+  setStatus(state.albums.length ? "" : "Nothing found.");
+  $("more").hidden = state.albums.length === 0;
+  render();
+}
 
-function applySearch() {
-  const q = $("search").value.trim().toLowerCase();
-  state.view = state.tracks.filter((t) =>
+function filterMine() {
+  const q = state.query.toLowerCase();
+  return state.mine.filter((t) =>
     !q || `${t.title} ${t.artist} ${t.album}`.toLowerCase().includes(q)
   );
-  renderList();
 }
 
-function renderList() {
+// ---------- rendering ----------
+
+function render() {
+  const showAlbums = !state.album && (state.source === "netlabels" || state.source === "live");
+  $("albums").hidden = !showAlbums;
+  $("albums").replaceChildren(...(showAlbums ? state.albums.map(albumCard) : []));
+
+  const head = $("albumHead");
+  head.hidden = !state.album;
+  if (state.album) {
+    const a = state.album;
+    $("albumCover").src = a.cover;
+    $("albumTitle").textContent = a.title;
+    $("albumArtist").textContent = [a.artist, a.year].filter(Boolean).join(" · ");
+    $("albumLicense").hidden = !a.license;
+    $("albumLicense").href = a.license || "#";
+    $("albumLicense").textContent = a.live ? "Live recording" : "License";
+    $("albumPage").href = a.page || "#";
+    $("albumPage").hidden = !a.page;
+    $("more").hidden = true;
+  }
+
+  renderTracks();
+  document.querySelectorAll(".chips button").forEach((b) =>
+    b.setAttribute("aria-pressed", b.dataset.source === state.source)
+  );
+}
+
+function albumCard(a) {
+  const card = document.createElement("button");
+  card.className = "album";
+  const img = document.createElement("img");
+  img.src = a.cover;
+  img.alt = "";
+  img.loading = "lazy";
+  const title = document.createElement("div");
+  title.className = "t";
+  title.textContent = a.title;
+  const artist = document.createElement("div");
+  artist.className = "a";
+  artist.textContent = [a.artist, a.year].filter(Boolean).join(" · ");
+  card.append(img, title, artist);
+  card.addEventListener("click", () => openAlbum(a));
+  return card;
+}
+
+function renderTracks() {
   const list = $("tracks");
   list.replaceChildren();
   const current = currentTrack();
-  const canDelete = !!store.get("uploadToken", "");
+  const canDelete = state.source === "mine" && !!store.get("uploadToken", "");
 
-  state.view.forEach((t, i) => {
+  state.list.forEach((t, i) => {
     const li = document.createElement("li");
     if (current && current.key === t.key) li.classList.add("playing");
 
@@ -76,10 +177,14 @@ function renderList() {
     title.textContent = t.title;
     const artist = document.createElement("div");
     artist.className = "a";
-    artist.textContent = t.album ? `${t.artist} · ${t.album}` : t.artist;
+    artist.textContent = state.album || !t.album ? t.artist : `${t.artist} · ${t.album}`;
     info.append(title, artist);
 
-    li.append(num, info);
+    const end = document.createElement("span");
+    end.className = "len";
+    end.textContent = t.length ? fmt(t.length) : "";
+
+    li.append(num, info, end);
 
     if (canDelete) {
       const del = document.createElement("button");
@@ -93,7 +198,7 @@ function renderList() {
       li.append(del);
     }
 
-    li.addEventListener("click", () => playFromView(i));
+    li.addEventListener("click", () => playList(i));
     list.append(li);
   });
 }
@@ -101,46 +206,56 @@ function renderList() {
 // ---------- playback ----------
 
 function currentTrack() {
-  return state.pos >= 0 ? state.tracks[state.queue[state.pos]] : null;
+  return state.pos >= 0 ? state.queue[state.pos] : null;
 }
 
-function buildQueue(startTrackIndex) {
-  // Queue is the visible list, so search acts as a playlist filter.
-  const idx = state.view.map((t) => state.tracks.indexOf(t));
+function trackUrl(t) {
+  return t.url || "/api/stream/" + t.key.split("/").map(encodeURIComponent).join("/");
+}
+
+function playList(start) {
+  const tracks = state.list.slice();
   if (state.shuffle) {
-    const rest = idx.filter((i) => i !== startTrackIndex);
-    for (let i = rest.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [rest[i], rest[j]] = [rest[j], rest[i]];
-    }
-    state.queue = [startTrackIndex, ...rest];
+    const first = tracks.splice(start, 1)[0];
+    shuffleInPlace(tracks);
+    state.queue = [first, ...tracks];
     state.pos = 0;
   } else {
-    state.queue = idx;
-    state.pos = idx.indexOf(startTrackIndex);
+    state.queue = tracks;
+    state.pos = start;
   }
+  playCurrent();
 }
 
-function playFromView(viewIndex) {
-  buildQueue(state.tracks.indexOf(state.view[viewIndex]));
-  playCurrent();
+function shuffleInPlace(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
 }
 
 function playCurrent() {
   const t = currentTrack();
   if (!t) return;
-  audio.src = streamUrl(t.key);
+  audio.src = trackUrl(t);
   audio.play().catch(() => {});
   $("nowTitle").textContent = t.title;
   $("nowArtist").textContent = t.artist;
   document.title = `${t.title} · SBK Music`;
-  updateMediaSession(t);
-  renderList();
+  if ("mediaSession" in navigator) {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: t.title,
+      artist: t.artist,
+      album: t.album || "",
+      artwork: state.album && state.album.cover ? [{ src: state.album.cover }] : [],
+    });
+  }
+  renderTracks();
 }
 
 function togglePlay() {
   if (!currentTrack()) {
-    if (state.view.length) playFromView(0);
+    if (state.list.length) playList(0);
     return;
   }
   audio.paused ? audio.play() : audio.pause();
@@ -170,7 +285,12 @@ function toggleShuffle() {
   $("shuffle").setAttribute("aria-pressed", state.shuffle);
   store.set("shuffle", state.shuffle ? "1" : "");
   const t = currentTrack();
-  if (t) buildQueue(state.tracks.indexOf(t));
+  if (t && state.shuffle) {
+    const rest = state.queue.filter((x) => x !== t);
+    shuffleInPlace(rest);
+    state.queue = [t, ...rest];
+    state.pos = 0;
+  }
 }
 
 function toggleRepeat() {
@@ -199,6 +319,10 @@ audio.addEventListener("loadedmetadata", () => {
 audio.addEventListener("play", () => { $("play").textContent = "⏸"; });
 audio.addEventListener("pause", () => { $("play").textContent = "▶"; });
 audio.addEventListener("ended", next);
+// Skip tracks that fail to load instead of stopping.
+audio.addEventListener("error", () => {
+  if (currentTrack()) setTimeout(next, 500);
+});
 
 $("seek").addEventListener("input", () => { seeking = true; });
 $("seek").addEventListener("change", () => {
@@ -215,7 +339,26 @@ $("next").addEventListener("click", next);
 $("prev").addEventListener("click", prev);
 $("shuffle").addEventListener("click", toggleShuffle);
 $("repeat").addEventListener("click", toggleRepeat);
-$("search").addEventListener("input", applySearch);
+$("back").addEventListener("click", closeAlbum);
+$("playAll").addEventListener("click", () => state.list.length && playList(0));
+$("more").addEventListener("click", () => { state.page++; load(true); });
+
+document.querySelectorAll(".chips button").forEach((b) =>
+  b.addEventListener("click", () => {
+    state.source = b.dataset.source;
+    store.set("source", state.source);
+    load();
+  })
+);
+
+let searchTimer;
+$("search").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    state.query = $("search").value.trim();
+    load();
+  }, 400);
+});
 
 document.addEventListener("keydown", (e) => {
   if (e.target.matches("input")) return;
@@ -228,12 +371,6 @@ document.addEventListener("keydown", (e) => {
 });
 
 // Lock screen / headphone controls.
-function updateMediaSession(t) {
-  if (!("mediaSession" in navigator)) return;
-  navigator.mediaSession.metadata = new MediaMetadata({
-    title: t.title, artist: t.artist, album: t.album,
-  });
-}
 if ("mediaSession" in navigator) {
   navigator.mediaSession.setActionHandler("play", () => audio.play());
   navigator.mediaSession.setActionHandler("pause", () => audio.pause());
@@ -241,7 +378,21 @@ if ("mediaSession" in navigator) {
   navigator.mediaSession.setActionHandler("previoustrack", prev);
 }
 
-// ---------- upload / delete ----------
+// ---------- uploads ----------
+
+async function loadMine() {
+  try {
+    const data = await getJSON("/api/tracks");
+    state.mine = data.tracks;
+  } catch {
+    state.mine = [];
+  }
+  document.querySelector('[data-source="mine"]').hidden = state.mine.length === 0;
+  if (state.source === "mine") {
+    if (state.mine.length) load();
+    else { state.source = "netlabels"; load(); }
+  }
+}
 
 function authHeader() {
   return { authorization: `Bearer ${store.get("uploadToken", "")}` };
@@ -253,7 +404,7 @@ $("uploadToggle").addEventListener("click", () => {
 $("token").value = store.get("uploadToken", "");
 $("token").addEventListener("change", () => {
   store.set("uploadToken", $("token").value.trim());
-  renderList();
+  renderTracks();
 });
 
 $("files").addEventListener("change", () => uploadFiles($("files").files));
@@ -301,7 +452,7 @@ async function uploadFiles(files) {
     }
   }
   $("files").value = "";
-  loadTracks();
+  loadMine();
 }
 
 async function deleteTrack(t) {
@@ -314,7 +465,7 @@ async function deleteTrack(t) {
     alert(`Delete failed: ${data.error || res.status}`);
     return;
   }
-  loadTracks();
+  loadMine();
 }
 
 // ---------- start ----------
@@ -325,4 +476,7 @@ $("shuffle").setAttribute("aria-pressed", state.shuffle);
 $("repeat").setAttribute("aria-pressed", state.repeat);
 audio.volume = Number(store.get("volume", 1));
 $("volume").value = audio.volume;
-loadTracks();
+const saved = store.get("source", "netlabels");
+state.source = ["netlabels", "live", "singles", "mine"].includes(saved) ? saved : "netlabels";
+load();
+loadMine();
