@@ -28,6 +28,12 @@ export default {
       if (path === "/api/web/tracks" && request.method === "GET") {
         return await cached(request, () => ccmTracks(url));
       }
+      if (path === "/api/web/popular" && request.method === "GET") {
+        return await cached(request, () => popular(url));
+      }
+      if (path === "/api/web/soundcloud" && request.method === "GET") {
+        return await cached(request, () => soundcloudInfo(url));
+      }
       if (path.startsWith("/api/web/ccm/")) {
         return await ccmStream(request, url.pathname.slice("/api/web/ccm/".length));
       }
@@ -361,6 +367,124 @@ async function ccmStream(request, path) {
   return new Response(request.method === "HEAD" ? null : res.body, {
     status: res.status,
     headers: out,
+  });
+}
+
+// ---------- popular songs: official 30-second previews ----------
+//
+// Apple's public iTunes Search API and top-songs feed give short official
+// previews of almost any song. Apple's terms allow streaming them with a
+// link back to the full song, which the player shows on every track.
+
+const COUNTRY = /^[a-z]{2}$/;
+
+async function popular(url) {
+  const country = COUNTRY.test(url.searchParams.get("country") || "")
+    ? url.searchParams.get("country")
+    : "us";
+  const text = (url.searchParams.get("q") || "").trim().slice(0, 100);
+  return text ? itunesSearch(text, country) : itunesChart(country);
+}
+
+async function itunesSearch(text, country) {
+  const params = new URLSearchParams({
+    term: text, media: "music", entity: "song", limit: 50, country,
+  });
+  const res = await fetch(`https://itunes.apple.com/search?${params}`);
+  if (!res.ok) throw new Error(`Song search failed (${res.status})`);
+  const data = await res.json();
+  const tracks = data.results
+    .filter((r) => r.previewUrl)
+    .map((r) => ({
+      key: `it:${r.trackId}`,
+      url: r.previewUrl,
+      title: r.trackName,
+      artist: r.artistName,
+      album: r.collectionName || "",
+      cover: (r.artworkUrl100 || "").replace("100x100bb", "600x600bb"),
+      page: r.trackViewUrl,
+      length: 30,
+      preview: true,
+    }));
+  return json({ tracks, chart: false });
+}
+
+async function itunesChart(country) {
+  const res = await fetch(`https://itunes.apple.com/${country}/rss/topsongs/limit=100/json`);
+  if (!res.ok) throw new Error(`Top songs failed (${res.status})`);
+  const data = await res.json();
+  const tracks = [];
+  for (const e of (data.feed && data.feed.entry) || []) {
+    const links = asList(e.link).map((l) => l.attributes || {});
+    const audio = links.find((l) => (l.type || "").startsWith("audio"));
+    if (!audio) continue;
+    const page = links.find((l) => l.rel === "alternate");
+    const images = asList(e["im:image"]);
+    tracks.push({
+      key: `it:${e.id.attributes["im:id"]}`,
+      url: audio.href,
+      title: e["im:name"].label,
+      artist: e["im:artist"].label,
+      album: (e["im:collection"] && e["im:collection"]["im:name"].label) || "",
+      cover: images.length
+        ? images[images.length - 1].label.replace(/\d+x\d+bb/, "600x600bb")
+        : "",
+      page: page ? page.href : "",
+      length: 30,
+      preview: true,
+    });
+  }
+  return json({ tracks, chart: true });
+}
+
+// ---------- SoundCloud links ----------
+//
+// SoundCloud only allows playback through its own embedded player, so this
+// just looks up a link's title and artwork. The page plays it in the widget.
+
+const SC_HOSTS = /^(www\.|m\.)?soundcloud\.com$/;
+
+async function soundcloudInfo(url) {
+  let link;
+  try {
+    link = new URL(url.searchParams.get("url") || "");
+  } catch {
+    return json({ error: "That isn't a link" }, 400);
+  }
+  if (link.protocol !== "https:") link.protocol = "https:";
+
+  // Share links (on.soundcloud.com/...) redirect to the real page.
+  if (link.hostname === "on.soundcloud.com") {
+    const r = await fetch(link, { redirect: "manual" });
+    const to = r.headers.get("location");
+    if (!to) return json({ error: "Couldn't open that share link" }, 400);
+    link = new URL(to, link);
+  }
+  if (!SC_HOSTS.test(link.hostname) || link.pathname.length < 2) {
+    return json({ error: "Paste a soundcloud.com song or playlist link" }, 400);
+  }
+  link.hostname = "soundcloud.com";
+  link.search = "";
+  link.hash = "";
+
+  const res = await fetch(
+    `https://soundcloud.com/oembed?format=json&url=${encodeURIComponent(link.href)}`
+  );
+  if (res.status === 404 || res.status === 403) {
+    return json({ error: "SoundCloud can't play that link (private, removed, or not embeddable)" }, 404);
+  }
+  if (!res.ok) throw new Error(`SoundCloud lookup failed (${res.status})`);
+  const d = await res.json();
+  const byline = ` by ${d.author_name}`;
+  return json({
+    key: `sc:${link.pathname}`,
+    sc: link.href,
+    title: d.title && d.title.endsWith(byline) ? d.title.slice(0, -byline.length) : d.title,
+    artist: d.author_name || "",
+    album: "SoundCloud",
+    cover: d.thumbnail_url || "",
+    page: link.href,
+    playlist: link.pathname.includes("/sets/"),
   });
 }
 

@@ -7,6 +7,8 @@ Out of the box it streams from:
 - **Internet Archive netlabels**: 60,000+ albums released under Creative Commons licenses
 - **Internet Archive live music (etree)**: concert recordings that the artists allow to be shared
 - **ccMixter**: Creative Commons singles and remixes
+- **Popular**: official 30-second previews of almost any song (top charts plus search), from Apple's public iTunes API, each with a link to the full song
+- **SoundCloud**: paste a song or playlist link and the full track plays in SoundCloud's own embedded player (links are saved in your browser)
 
 You can also upload your own songs, which are stored in Workers KV.
 
@@ -35,6 +37,8 @@ browser ──> Worker (src/worker.js) ──> KV namespace "MUSIC"
 | `GET /api/web/album/<id>` | Tracks of one album (only netlabel CC albums and etree shows) |
 | `GET /api/web/tracks?q=&page=` | Search ccMixter singles |
 | `GET /api/web/ccm/<path>` | Stream a ccMixter file (its server blocks direct links) |
+| `GET /api/web/popular?q=&country=` | Top songs, or search any song (30-second previews) |
+| `GET /api/web/soundcloud?url=` | Look up a SoundCloud link's title and artwork |
 | `GET /api/tracks` | List songs |
 | `GET /api/stream/<key>` | Stream a song (supports Range) |
 | `PUT /api/tracks/<key>` | Upload a song (needs token) |

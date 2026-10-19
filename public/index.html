@@ -20,6 +20,8 @@
     <button data-source="netlabels" aria-pressed="true">Albums</button>
     <button data-source="live" aria-pressed="false">Live shows</button>
     <button data-source="singles" aria-pressed="false">Singles</button>
+    <button data-source="popular" aria-pressed="false">Popular</button>
+    <button data-source="soundcloud" aria-pressed="false">SoundCloud</button>
     <button data-source="mine" aria-pressed="false" hidden>My uploads</button>
   </nav>
 
@@ -48,12 +50,19 @@
       </div>
     </div>
 
+    <form id="scAdd" class="sc-add" hidden>
+      <input id="scUrl" type="url" placeholder="Paste a SoundCloud song or playlist link" autocomplete="off" required>
+      <button class="primary" type="submit">Add</button>
+    </form>
+    <p id="note" class="note" hidden></p>
     <p id="status" class="status">Loading…</p>
     <div id="albums" class="albums"></div>
     <ol id="tracks" class="tracks"></ol>
     <button id="more" class="ghost more" hidden>Load more</button>
-    <p class="credit">Music from the <a href="https://archive.org/details/netlabels" target="_blank" rel="noopener">Internet Archive</a> and <a href="https://ccmixter.org" target="_blank" rel="noopener">ccMixter</a>, shared by the artists under Creative Commons or live-recording licenses.</p>
+    <p class="credit">Music from the <a href="https://archive.org/details/netlabels" target="_blank" rel="noopener">Internet Archive</a> and <a href="https://ccmixter.org" target="_blank" rel="noopener">ccMixter</a>, shared by the artists under Creative Commons or live-recording licenses. Popular songs are official 30-second previews from Apple Music. SoundCloud songs play in SoundCloud's own player.</p>
   </main>
+
+  <div id="scWidget" class="sc-widget" hidden></div>
 
   <footer class="player">
     <div class="now">

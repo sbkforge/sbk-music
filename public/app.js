@@ -57,6 +57,16 @@ async function load(append = false) {
     if (state.source === "mine") {
       state.list = filterMine();
       setStatus(state.list.length ? "" : "No uploads match.");
+    } else if (state.source === "soundcloud") {
+      state.list = filterSaved(loadSaved());
+      setStatus(state.list.length ? "" : state.query
+        ? "No saved SoundCloud links match."
+        : "Paste a SoundCloud link above to add it. It plays the full song in SoundCloud's player.");
+    } else if (state.source === "popular") {
+      const data = await getJSON(`/api/web/popular?q=${q}`);
+      if (id !== loadId) return;
+      state.list = data.tracks;
+      setStatus(state.list.length ? "" : "Nothing found.");
     } else if (state.source === "singles") {
       const data = await getJSON(`/api/web/tracks?q=${q}&page=${state.page}`);
       if (id !== loadId) return;
@@ -105,10 +115,47 @@ function closeAlbum() {
 }
 
 function filterMine() {
+  return filterSaved(state.mine);
+}
+
+function filterSaved(list) {
   const q = state.query.toLowerCase();
-  return state.mine.filter((t) =>
+  return list.filter((t) =>
     !q || `${t.title} ${t.artist} ${t.album}`.toLowerCase().includes(q)
   );
+}
+
+// ---------- saved SoundCloud links (kept in this browser) ----------
+
+function loadSaved() {
+  try { return JSON.parse(store.get("soundcloud", "[]")) || []; } catch { return []; }
+}
+
+function saveSaved(list) {
+  store.set("soundcloud", JSON.stringify(list));
+}
+
+$("scAdd").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = $("scUrl");
+  const link = input.value.trim();
+  if (!link) return;
+  setStatus("Looking up link…");
+  try {
+    const t = await getJSON(`/api/web/soundcloud?url=${encodeURIComponent(link)}`);
+    const saved = loadSaved().filter((x) => x.key !== t.key);
+    saved.unshift(t);
+    saveSaved(saved);
+    input.value = "";
+    load();
+  } catch (err) {
+    setStatus(err.message);
+  }
+});
+
+function removeSaved(t) {
+  saveSaved(loadSaved().filter((x) => x.key !== t.key));
+  load();
 }
 
 // ---------- rendering ----------
@@ -132,6 +179,21 @@ function render() {
     $("albumPage").hidden = !a.page;
     $("more").hidden = true;
   }
+
+  $("scAdd").hidden = state.source !== "soundcloud";
+  const note = {
+    popular: state.query
+      ? "Official 30-second previews. Tap “Full song” to hear the whole track on Apple Music."
+      : "Top songs right now. Official 30-second previews; tap “Full song” for the whole track.",
+    soundcloud: "Full songs, played in SoundCloud's player. Some major-label songs only play a preview, depending on the label.",
+  }[state.source];
+  $("note").hidden = !note || !!state.album;
+  $("note").textContent = note || "";
+  $("search").placeholder = {
+    popular: "Search any artist or song",
+    soundcloud: "Filter saved links",
+    mine: "Filter uploads",
+  }[state.source] || "Search free music";
 
   renderTracks();
   document.querySelectorAll(".chips button").forEach((b) =>
@@ -161,20 +223,37 @@ function renderTracks() {
   const list = $("tracks");
   list.replaceChildren();
   const current = currentTrack();
-  const canDelete = state.source === "mine" && !!store.get("uploadToken", "");
+  const canDelete =
+    (state.source === "mine" && !!store.get("uploadToken", "")) ||
+    state.source === "soundcloud";
 
   state.list.forEach((t, i) => {
     const li = document.createElement("li");
     if (current && current.key === t.key) li.classList.add("playing");
 
-    const num = document.createElement("span");
-    num.className = "num";
-    num.textContent = i + 1;
+    let num;
+    if (t.cover && !state.album) {
+      num = document.createElement("img");
+      num.className = "thumb";
+      num.src = t.cover;
+      num.alt = "";
+      num.loading = "lazy";
+    } else {
+      num = document.createElement("span");
+      num.className = "num";
+      num.textContent = i + 1;
+    }
 
     const info = document.createElement("div");
     const title = document.createElement("div");
     title.className = "t";
     title.textContent = t.title;
+    if (t.preview || t.playlist) {
+      const badge = document.createElement("span");
+      badge.className = "badge";
+      badge.textContent = t.preview ? "Preview" : "Playlist";
+      title.append(badge);
+    }
     const artist = document.createElement("div");
     artist.className = "a";
     artist.textContent = state.album || !t.album ? t.artist : `${t.artist} · ${t.album}`;
@@ -186,14 +265,25 @@ function renderTracks() {
 
     li.append(num, info, end);
 
+    if (t.page && (t.preview || t.sc)) {
+      const ext = document.createElement("a");
+      ext.className = "ext";
+      ext.href = t.page;
+      ext.target = "_blank";
+      ext.rel = "noopener";
+      ext.textContent = t.preview ? "Full song ↗" : "SoundCloud ↗";
+      ext.addEventListener("click", (e) => e.stopPropagation());
+      li.append(ext);
+    }
+
     if (canDelete) {
       const del = document.createElement("button");
       del.className = "del";
-      del.title = "Delete";
+      del.title = t.sc ? "Remove" : "Delete";
       del.textContent = "✕";
       del.addEventListener("click", (e) => {
         e.stopPropagation();
-        deleteTrack(t);
+        t.sc ? removeSaved(t) : deleteTrack(t);
       });
       li.append(del);
     }
@@ -237,20 +327,35 @@ function shuffleInPlace(a) {
 function playCurrent() {
   const t = currentTrack();
   if (!t) return;
-  audio.src = trackUrl(t);
-  audio.play().catch(() => {});
+  if (t.sc) {
+    // Stop the normal player without triggering its error handler.
+    audio.pause();
+    audio.removeAttribute("src");
+    audio.load();
+    playSoundCloud(t);
+  } else {
+    stopSoundCloud();
+    audio.src = trackUrl(t);
+    audio.play().catch(() => {});
+  }
   $("nowTitle").textContent = t.title;
   $("nowArtist").textContent = t.artist;
   document.title = `${t.title} · SBK Music`;
   if ("mediaSession" in navigator) {
+    const cover = t.cover || (state.album && state.album.cover);
     navigator.mediaSession.metadata = new MediaMetadata({
       title: t.title,
       artist: t.artist,
       album: t.album || "",
-      artwork: state.album && state.album.cover ? [{ src: state.album.cover }] : [],
+      artwork: cover ? [{ src: cover }] : [],
     });
   }
   renderTracks();
+}
+
+function onSoundCloud() {
+  const t = currentTrack();
+  return !!(t && t.sc && sc.widget);
 }
 
 function togglePlay() {
@@ -258,7 +363,89 @@ function togglePlay() {
     if (state.list.length) playList(0);
     return;
   }
-  audio.paused ? audio.play() : audio.pause();
+  if (onSoundCloud()) sc.widget.toggle();
+  else audio.paused ? audio.play() : audio.pause();
+}
+
+// ---------- SoundCloud widget ----------
+//
+// SoundCloud songs play in SoundCloud's own embedded player (their terms
+// don't allow anything else). Our buttons drive it through the Widget API.
+
+const sc = { widget: null, api: null, pos: 0, dur: 0 };
+
+function loadScApi() {
+  if (!sc.api) {
+    sc.api = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://w.soundcloud.com/player/api.js";
+      s.onload = () => resolve(window.SC);
+      s.onerror = () => { sc.api = null; reject(new Error("Couldn't load SoundCloud")); };
+      document.head.append(s);
+    });
+  }
+  return sc.api;
+}
+
+const SC_OPTIONS = {
+  auto_play: true, visual: false, show_comments: false,
+  hide_related: true, show_teaser: false, show_reposts: false,
+};
+
+async function playSoundCloud(t) {
+  $("scWidget").hidden = false;
+  document.body.classList.add("sc-on");
+  let SC;
+  try {
+    SC = await loadScApi();
+  } catch (err) {
+    setStatus(err.message);
+    return;
+  }
+  if (currentTrack() !== t) return;
+
+  sc.pos = 0;
+  sc.dur = 0;
+  if (sc.widget) {
+    sc.widget.load(t.sc, { ...SC_OPTIONS, callback: () => sc.widget.setVolume(audio.volume * 100) });
+    return;
+  }
+
+  const frame = document.createElement("iframe");
+  frame.allow = "autoplay; encrypted-media";
+  frame.title = "SoundCloud player";
+  frame.src = `https://w.soundcloud.com/player/?url=${encodeURIComponent(t.sc)}&${new URLSearchParams(SC_OPTIONS)}`;
+  $("scWidget").append(frame);
+
+  const w = SC.Widget(frame);
+  sc.widget = w;
+  const E = SC.Widget.Events;
+  w.bind(E.READY, () => w.setVolume(audio.volume * 100));
+  w.bind(E.PLAY, () => {
+    if (onSoundCloud()) $("play").textContent = "⏸";
+    w.getDuration((d) => { sc.dur = d; $("dur").textContent = fmt(d / 1000); });
+  });
+  w.bind(E.PAUSE, () => { if (onSoundCloud()) $("play").textContent = "▶"; });
+  w.bind(E.PLAY_PROGRESS, (e) => {
+    if (!onSoundCloud()) return;
+    sc.pos = e.currentPosition;
+    $("cur").textContent = fmt(sc.pos / 1000);
+    if (!seeking && sc.dur) $("seek").value = Math.round((sc.pos / sc.dur) * 1000);
+  });
+  w.bind(E.FINISH, () => {
+    if (!onSoundCloud()) return;
+    // A playlist moves through its own songs; go on once its last one ends.
+    if (!currentTrack().playlist) return next();
+    w.getSounds((sounds) => w.getCurrentSoundIndex((i) => {
+      if (i >= sounds.length - 1) next();
+    }));
+  });
+}
+
+function stopSoundCloud() {
+  if (sc.widget) sc.widget.pause();
+  $("scWidget").hidden = true;
+  document.body.classList.remove("sc-on");
 }
 
 function next() {
@@ -272,8 +459,10 @@ function next() {
 function prev() {
   if (!state.queue.length) return;
   // Restart the song if we're more than 3s in, like most players.
-  if (audio.currentTime > 3 || state.pos === 0) {
-    audio.currentTime = 0;
+  const at = onSoundCloud() ? sc.pos / 1000 : audio.currentTime;
+  if (at > 3 || state.pos === 0) {
+    if (onSoundCloud()) sc.widget.seekTo(0);
+    else audio.currentTime = 0;
     return;
   }
   state.pos--;
@@ -308,29 +497,35 @@ function fmt(sec) {
 
 let seeking = false;
 audio.addEventListener("timeupdate", () => {
+  if (onSoundCloud()) return;
   $("cur").textContent = fmt(audio.currentTime);
   if (!seeking && audio.duration) {
     $("seek").value = Math.round((audio.currentTime / audio.duration) * 1000);
   }
 });
 audio.addEventListener("loadedmetadata", () => {
+  if (onSoundCloud()) return;
   $("dur").textContent = fmt(audio.duration);
 });
-audio.addEventListener("play", () => { $("play").textContent = "⏸"; });
-audio.addEventListener("pause", () => { $("play").textContent = "▶"; });
+audio.addEventListener("play", () => { if (!onSoundCloud()) $("play").textContent = "⏸"; });
+audio.addEventListener("pause", () => { if (!onSoundCloud()) $("play").textContent = "▶"; });
 audio.addEventListener("ended", next);
 // Skip tracks that fail to load instead of stopping.
 audio.addEventListener("error", () => {
-  if (currentTrack()) setTimeout(next, 500);
+  const t = currentTrack();
+  if (t && !t.sc && audio.getAttribute("src")) setTimeout(next, 500);
 });
 
 $("seek").addEventListener("input", () => { seeking = true; });
 $("seek").addEventListener("change", () => {
-  if (audio.duration) audio.currentTime = ($("seek").value / 1000) * audio.duration;
+  const frac = $("seek").value / 1000;
+  if (onSoundCloud()) { if (sc.dur) sc.widget.seekTo(frac * sc.dur); }
+  else if (audio.duration) audio.currentTime = frac * audio.duration;
   seeking = false;
 });
 $("volume").addEventListener("input", () => {
   audio.volume = $("volume").value;
+  if (sc.widget) sc.widget.setVolume(audio.volume * 100);
   store.set("volume", audio.volume);
 });
 
@@ -372,8 +567,8 @@ document.addEventListener("keydown", (e) => {
 
 // Lock screen / headphone controls.
 if ("mediaSession" in navigator) {
-  navigator.mediaSession.setActionHandler("play", () => audio.play());
-  navigator.mediaSession.setActionHandler("pause", () => audio.pause());
+  navigator.mediaSession.setActionHandler("play", () => onSoundCloud() ? sc.widget.play() : audio.play());
+  navigator.mediaSession.setActionHandler("pause", () => onSoundCloud() ? sc.widget.pause() : audio.pause());
   navigator.mediaSession.setActionHandler("nexttrack", next);
   navigator.mediaSession.setActionHandler("previoustrack", prev);
 }
@@ -477,6 +672,6 @@ $("repeat").setAttribute("aria-pressed", state.repeat);
 audio.volume = Number(store.get("volume", 1));
 $("volume").value = audio.volume;
 const saved = store.get("source", "netlabels");
-state.source = ["netlabels", "live", "singles", "mine"].includes(saved) ? saved : "netlabels";
+state.source = ["netlabels", "live", "singles", "popular", "soundcloud", "mine"].includes(saved) ? saved : "netlabels";
 load();
 loadMine();
