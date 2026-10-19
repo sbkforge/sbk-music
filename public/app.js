@@ -125,6 +125,36 @@ function filterSaved(list) {
   );
 }
 
+// One-tap shortcuts on the Popular tab. Search still finds any artist.
+const ARTISTS = [
+  "Taylor Swift", "Travis Scott", "The Weeknd", "Justin Bieber", "Selena Gomez",
+  "Drake", "Ariana Grande", "Billie Eilish", "Ed Sheeran", "Dua Lipa",
+  "Post Malone", "Kendrick Lamar", "SZA", "Olivia Rodrigo", "Bad Bunny",
+  "Rihanna", "Eminem", "Doja Cat", "BTS", "Arijit Singh",
+];
+
+function renderArtists() {
+  const box = $("artists");
+  box.hidden = state.source !== "popular";
+  if (box.hidden) return;
+  if (!box.childElementCount) {
+    for (const name of ARTISTS) {
+      const b = document.createElement("button");
+      b.textContent = name;
+      b.addEventListener("click", () => {
+        const same = state.query.toLowerCase() === name.toLowerCase();
+        $("search").value = same ? "" : name;
+        state.query = same ? "" : name;
+        load();
+      });
+      box.append(b);
+    }
+  }
+  for (const b of box.children) {
+    b.setAttribute("aria-pressed", b.textContent.toLowerCase() === state.query.toLowerCase());
+  }
+}
+
 // ---------- popular songs (official 30-second previews) ----------
 //
 // Ask Apple from the browser so each listener has their own rate limit;
@@ -242,6 +272,7 @@ function render() {
   }
 
   $("scAdd").hidden = state.source !== "soundcloud";
+  renderArtists();
   const note = {
     popular: state.query
       ? "Official 30-second previews. Tap “Full song” to hear the whole track on Apple Music."
