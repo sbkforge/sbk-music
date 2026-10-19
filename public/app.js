@@ -63,9 +63,9 @@ async function load(append = false) {
         ? "No saved SoundCloud links match."
         : "Paste a SoundCloud link above to add it. It plays the full song in SoundCloud's player.");
     } else if (state.source === "popular") {
-      const data = await getJSON(`/api/web/popular?q=${q}`);
+      const tracks = await popular(state.query);
       if (id !== loadId) return;
-      state.list = data.tracks;
+      state.list = tracks;
       setStatus(state.list.length ? "" : "Nothing found.");
     } else if (state.source === "singles") {
       const data = await getJSON(`/api/web/tracks?q=${q}&page=${state.page}`);
@@ -123,6 +123,67 @@ function filterSaved(list) {
   return list.filter((t) =>
     !q || `${t.title} ${t.artist} ${t.album}`.toLowerCase().includes(q)
   );
+}
+
+// ---------- popular songs (official 30-second previews) ----------
+//
+// Ask Apple from the browser so each listener has their own rate limit;
+// Apple throttles shared cloud addresses. The Worker is the fallback.
+
+async function popular(query) {
+  try {
+    return query ? await itunesSearch(query) : await itunesChart();
+  } catch {
+    const data = await getJSON(`/api/web/popular?q=${encodeURIComponent(query)}`);
+    return data.tracks;
+  }
+}
+
+async function itunesSearch(text) {
+  const params = new URLSearchParams({
+    term: text, media: "music", entity: "song", limit: 50, country: "us",
+  });
+  const res = await fetch(`https://itunes.apple.com/search?${params}`);
+  if (!res.ok) throw new Error(res.status);
+  const data = await res.json();
+  return data.results.filter((r) => r.previewUrl).map((r) => ({
+    key: `it:${r.trackId}`,
+    url: r.previewUrl,
+    title: r.trackName,
+    artist: r.artistName,
+    album: r.collectionName || "",
+    cover: (r.artworkUrl100 || "").replace("100x100bb", "600x600bb"),
+    page: r.trackViewUrl,
+    length: 30,
+    preview: true,
+  }));
+}
+
+async function itunesChart() {
+  const res = await fetch("https://itunes.apple.com/us/rss/topsongs/limit=100/json");
+  if (!res.ok) throw new Error(res.status);
+  const data = await res.json();
+  const list = (v) => (Array.isArray(v) ? v : v ? [v] : []);
+  const tracks = [];
+  for (const e of (data.feed && data.feed.entry) || []) {
+    const links = list(e.link).map((l) => l.attributes || {});
+    const audioLink = links.find((l) => (l.type || "").startsWith("audio"));
+    if (!audioLink) continue;
+    const page = links.find((l) => l.rel === "alternate");
+    const images = list(e["im:image"]);
+    tracks.push({
+      key: `it:${e.id.attributes["im:id"]}`,
+      url: audioLink.href,
+      title: e["im:name"].label,
+      artist: e["im:artist"].label,
+      album: (e["im:collection"] && e["im:collection"]["im:name"].label) || "",
+      cover: images.length ? images[images.length - 1].label.replace(/\d+x\d+bb/, "600x600bb") : "",
+      page: page ? page.href : "",
+      length: 30,
+      preview: true,
+    });
+  }
+  return tracks;
 }
 
 // ---------- saved SoundCloud links (kept in this browser) ----------
